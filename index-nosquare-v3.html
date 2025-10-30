@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Défi : placer le plus de jetons sans compléter un carré</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;background:#ffffff;color:#111827}
+    header{padding:16px 20px;background:linear-gradient(120deg,#dbeafe,#fde68a);border-bottom:2px solid #111827}
+    header h1{margin:0;font-size:clamp(20px,3vw,28px)}
+    .container{max-width:980px;margin:20px auto;padding:0 16px}
+    .board-card{background:#ffffff;border:2px solid #111827;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.08);padding:14px}
+    .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .left, .right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .badge{font-weight:700;border-radius:999px;padding:8px 12px;border:2px solid #111827;background:#fff}
+    .badge.ok{color:#065f46;border-color:#065f46;background:#ecfdf5}
+    .badge.warn{color:#991b1b;border-color:#991b1b;background:#fef2f2}
+    button, select{appearance:none;border:2px solid #111827;background:#fff;border-radius:10px;padding:10px 14px;font-weight:800;cursor:pointer}
+    button:hover{background:#f9fafb}
+    button.primary{background:#2563eb;border-color:#111827;color:#fff}
+    button.primary:hover{filter:brightness(.95)}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    select{cursor:pointer;padding-right:28px}
+    input[type='file']{display:none}
+
+    .board-wrap{display:grid;grid-template-columns:1fr;gap:10px}
+    .svg-wrap{display:flex;justify-content:center;align-items:center;}
+    svg{max-width:100%;height:auto;touch-action:manipulation;background:#f8fafc;border:2px solid #111827;border-radius:8px}
+
+    .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;color:#374151;font-size:16px;font-weight:600}
+    .msg{min-height:24px;color:#374151;font-weight:700}
+
+    :fullscreen header{display:none}
+    :fullscreen .container{max-width:100vw;margin:0;padding:0}
+    :fullscreen .board-card{border:none;border-radius:0;box-shadow:none}
+    :fullscreen svg{width:100vw;height:100vh;object-fit:contain;border:none;border-radius:0;background:#ffffff}
+    :fullscreen .toolbar{display:none}
+
+    .fs-panels{display:none}
+    :fullscreen .fs-panels{display:block}
+    :fullscreen .fs-panel{position:fixed;top:50%;transform:translateY(-50%);z-index:6;display:flex;flex-direction:column;gap:10px;background:rgba(255,255,255,.95);border:2px solid #111827;border-radius:12px;padding:10px;max-width:26ch}
+    :fullscreen .fs-panel.left{left:12px}
+    :fullscreen .fs-panel.right{right:12px}
+    :fullscreen .fs-panel button, :fullscreen .fs-panel select{min-width:48px;min-height:48px;padding:10px 12px;font-size:16px}
+
+    :fullscreen #fsBadgesSlot{display:flex;flex-direction:column;gap:8px}
+    :fullscreen #fsBadgesSlot .left{display:flex;flex-direction:column;gap:8px}
+    :fullscreen #fsBadgesSlot .badge{display:block;text-align:center}
+
+    #fsHideControls{display:none}
+    :fullscreen #fsHideControls{display:flex;align-items:center;justify-content:center;position:fixed;top:12px;left:12px;z-index:8;width:48px;height:48px;border-radius:999px;border:2px solid #111827;background:#ffffff;font-weight:900;cursor:pointer}
+    :fullscreen #fsHideControls.active{background:#111827;color:#ffffff}
+
+    #nodes .ring{fill:#ffffff;stroke:#111827;stroke-width:2;opacity:.95}
+    #nodes .hit{fill:transparent;cursor:pointer}
+    #tokens circle{fill:#111827}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Défi : placer le plus de jetons <u>sans compléter un carré</u></h1>
+  </header>
+
+  <div class="container" id="app">
+    <div class="board-card" role="group" aria-label="Plateau 4×4 carrés (25 nœuds)">
+      <div class="toolbar">
+        <div class="left" id="toolbarLeft">
+          <span class="badge" id="score">Jetons : 0</span>
+          <span class="badge" id="best">Meilleur : 0</span>
+          <span class="badge ok" id="status">Aucun carré complété ✓</span>
+        </div>
+        <div class="right">
+          <button id="toggleConstraint" class="primary" aria-pressed="true">Contrainte : ON</button>
+          <button id="fullscreen">Plein écran</button>
+          <select id="pdfCount" title="Nombre de grilles vierges">
+            <option value="1">1 grille</option>
+            <option value="2">2 grilles</option>
+            <option value="4">4 grilles</option>
+            <option value="6" selected>6 grilles</option>
+            <option value="8">8 grilles</option>
+            <option value="10">10 grilles</option>
+          </select>
+          <button id="exportPdf">Télécharger PDF</button>
+          <button id="saveGrid">Enregistrer</button>
+          <button id="openGridBtn">Ouvrir</button>
+          <input type="file" id="openGridInput" accept="application/json" />
+          <button id="undo" disabled>Annuler</button>
+          <button id="redo" disabled>Refaire</button>
+          <button id="reset">Réinitialiser</button>
+          <span class="drop-hint">Dépose un fichier .json ici pour charger</span>
+          <button id="help">Aide</button>
+        </div>
+      </div>
+
+      <div class="board-wrap">
+        <div class="svg-wrap">
+          <svg id="board" viewBox="0 0 360 360" role="img" aria-label="Grille 4×4 carrés (25 nœuds)">
+            <g id="gridLines" stroke="#374151" stroke-width="2"></g>
+            <g id="nodes"></g>
+            <g id="tokens"></g>
+          </svg>
+        </div>
+        <div class="legend">
+          <span id="msg" class="msg" aria-live="polite"></span>
+        </div>
+      </div>
+
+      <button id="fsHideControls" title="Masquer/afficher les contrôles">⧉</button>
+
+      <div class="fs-panels">
+        <div class="fs-panel left">
+          <div id="fsBadgesSlot"></div>
+          <button id="fsConstraint" aria-pressed="true" class="primary">Contrainte : ON</button>
+          <button id="fsUndo">Annuler</button>
+          <button id="fsRedo">Refaire</button>
+          <button id="fsReset">Réinitialiser</button>
+          <select id="fsPdfCount" title="Nombre de grilles vierges">
+            <option value="1">1 grille</option>
+            <option value="2">2 grilles</option>
+            <option value="4">4 grilles</option>
+            <option value="6" selected>6 grilles</option>
+            <option value="8">8 grilles</option>
+            <option value="10">10 grilles</option>
+          </select>
+          <button id="fsExportPdf">Télécharger PDF</button>
+        </div>
+        <div class="fs-panel right">
+          <button id="fsSave">Enregistrer</button>
+          <button id="fsOpen">Ouvrir</button>
+          <button id="fsHelp">Aide</button>
+          <button id="fsExit">Quitter</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="modal">
+    <h2>Aide</h2>
+    <ul>
+      <li><strong>But :</strong> placer un maximum de jetons <em>sans qu’aucun carré (de n’importe quelle taille ni orientation) n’ait ses 4 sommets occupés</em>.</li>
+      <li><strong>Contrainte ON</strong> : le jeu empêche de poser le 4e sommet d’un carré.</li>
+      <li><strong>Télécharger PDF</strong> : génère un PDF A4 portrait avec des grilles vierges.</li>
+      <li><strong>Enregistrer / Ouvrir</strong> : sauvegarder/charger vos grilles (JSON).</li>
+      <li><strong>Raccourcis</strong> : F plein écran, Ctrl+Z annuler, Ctrl+Y refaire.</li>
+    </ul>
+    <form method="dialog" style="margin-top:16px;text-align:right"><button>Fermer</button></form>
+  </dialog>
+
+  <script>
+  (function(){
+    const LINES = 5;        // 5 lignes -> 4 carrés
+    const PITCH = 80;       // taille d'un carré
+    const MARGIN = 20;      // marge
+    const SIZE_PX = 2*MARGIN + (LINES-1)*PITCH; // 360
+
+    const nodesG=document.getElementById('nodes');
+    const tokensG=document.getElementById('tokens');
+    const gridLines=document.getElementById('gridLines');
+    const msg=document.getElementById('msg');
+    const scoreEl=document.getElementById('score');
+    const bestEl=document.getElementById('best');
+    const statusEl=document.getElementById('status');
+    const btnUndo=document.getElementById('undo');
+    const btnRedo=document.getElementById('redo');
+    const btnReset=document.getElementById('reset');
+    const btnHelp=document.getElementById('help');
+    const btnFS=document.getElementById('fullscreen');
+    const btnToggle=document.getElementById('toggleConstraint');
+    const btnExportPdf=document.getElementById('exportPdf');
+    const selectCount=document.getElementById('pdfCount');
+    const btnSave=document.getElementById('saveGrid');
+    const btnOpen=document.getElementById('openGridBtn');
+    const inputOpen=document.getElementById('openGridInput');
+    const container=document.querySelector('.board-card');
+
+    // FS side
+    const fsConstraint=document.getElementById('fsConstraint');
+    const fsUndo=document.getElementById('fsUndo');
+    const fsRedo=document.getElementById('fsRedo');
+    const fsReset=document.getElementById('fsReset');
+    const fsExportPdf=document.getElementById('fsExportPdf');
+    const fsSelectCount=document.getElementById('fsPdfCount');
+    const fsSave=document.getElementById('fsSave');
+    const fsOpen=document.getElementById('fsOpen');
+    const fsHelp=document.getElementById('fsHelp');
+    const fsExit=document.getElementById('fsExit');
+    const fsBadgesSlot=document.getElementById('fsBadgesSlot');
+    const fsHideControls=document.getElementById('fsHideControls');
+    const toolbarLeft=document.getElementById('toolbarLeft');
+
+    let constraintOn=true;
+    const placed=new Set(), history=[], redoStack=[];
+    const BEST_KEY='cm2-no-square-4x4-25nodes-v1';
+    let best=Number(localStorage.getItem(BEST_KEY)||0);
+    bestEl.textContent=`Meilleur : ${best}`;
+
+    // === Tracer les lignes ===
+    for(let i=0;i<LINES;i++){
+      const pos = MARGIN + i*PITCH;
+      const v = document.createElementNS('http://www.w3.org/2000/svg','line');
+      v.setAttribute('x1', pos); v.setAttribute('y1', MARGIN);
+      v.setAttribute('x2', pos); v.setAttribute('y2', SIZE_PX - MARGIN);
+      gridLines.appendChild(v);
+      const h = document.createElementNS('http://www.w3.org/2000/svg','line');
+      h.setAttribute('x1', MARGIN); h.setAttribute('y1', pos);
+      h.setAttribute('x2', SIZE_PX - MARGIN); h.setAttribute('y2', pos);
+      gridLines.appendChild(h);
+    }
+
+    // === Intersections et zones cliquables ===
+    for(let r=0;r<LINES;r++){
+      for(let c=0;c<LINES;c++){
+        const x = MARGIN + c*PITCH;
+        const y = MARGIN + r*PITCH;
+        const ring=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        ring.setAttribute('cx',x); ring.setAttribute('cy',y); ring.setAttribute('r',7);
+        ring.setAttribute('class','ring');
+        const hit=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        hit.setAttribute('cx',x); hit.setAttribute('cy',y); hit.setAttribute('r',14);
+        hit.setAttribute('class','hit');
+        hit.dataset.r=r; hit.dataset.c=c;
+        hit.addEventListener('click',onNodeClick);
+        nodesG.appendChild(ring); nodesG.appendChild(hit);
+      }
+    }
+
+    // clic sur un jeton pour le retirer
+    tokensG.addEventListener('click', e => {
+      if(e.target && e.target.tagName.toLowerCase()==='circle'){
+        const r = +e.target.dataset.r; const c = +e.target.dataset.c;
+        removeToken(r, c, true); setMessage('Jeton retiré.');
+      }
+    });
+
+    function rcKey(r,c){return r+','+c;}
+
+    function onNodeClick(e){
+      const r=+e.target.dataset.r, c=+e.target.dataset.c, k=rcKey(r,c);
+      if(placed.has(k)){ removeToken(r,c,true); setMessage('Jeton retiré.'); return; }
+      if(constraintOn && wouldCompleteAnySquare(r,c)){
+        setError('Interdit : cela compléterait un carré (y compris en diagonale).'); return;
+      }
+      addToken(r,c,true); setMessage('Jeton posé ✓');
+    }
+
+    function addToken(r,c,record){
+      const k=rcKey(r,c); if(placed.has(k))return;
+      placed.add(k);
+      const x=MARGIN+c*PITCH,y=MARGIN+r*PITCH;
+      const t=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      t.setAttribute('cx',x); t.setAttribute('cy',y); t.setAttribute('r',6);
+      t.dataset.r=r; t.dataset.c=c; tokensG.appendChild(t);
+      if(record){history.push({type:'add',r,c});redoStack.length=0;}
+      update();
+    }
+    function removeToken(r,c,record){
+      const k=rcKey(r,c); if(!placed.has(k))return;
+      placed.delete(k);
+      const t=[...tokensG.children].find(el=>+el.dataset.r===r&&+el.dataset.c===c);
+      if(t)tokensG.removeChild(t);
+      if(record){history.push({type:'remove',r,c});redoStack.length=0;}
+      update();
+    }
+
+    function update(){
+      scoreEl.textContent=`Jetons : ${placed.size}`;
+      if(placed.size>best){best=placed.size;localStorage.setItem(BEST_KEY,best);bestEl.textContent=`Meilleur : ${best}`;}
+      const bad = existsCompletedSquare(placed);
+      statusEl.textContent = bad? 'Attention : carré complété' : 'Aucun carré complété ✓';
+      statusEl.className = bad? 'badge warn' : 'badge ok';
+      btnUndo.disabled=history.length===0; btnRedo.disabled=redoStack.length===0;
+    }
+
+    function setMessage(t){msg.textContent=t;msg.className='msg';}
+    function setError(t){msg.textContent=t;msg.className='msg error';}
+
+    // === Détection de TOUT carré (axes ou incliné) via paires de diagonales ===
+    function existsCompletedSquare(set){
+      const pts = [...set].map(k => k.split(',').map(Number)); // [ [r,c], ... ]
+      const has = (r,c) => set.has(rcKey(r,c));
+      const isInt = (x) => Math.abs(x - Math.round(x)) < 1e-9;
+      const inBounds = (x) => x >= 0 && x < LINES;
+
+      for(let i=0;i<pts.length;i++){
+        for(let j=i+1;j<pts.length;j++){
+          const [r1,c1]=pts[i], [r2,c2]=pts[j];
+          // Milieu et demi-vecteur
+          const mx = (r1 + r2)/2, my = (c1 + c2)/2;
+          const vx = (r2 - r1)/2, vy = (c2 - c1)/2;
+          // Les deux autres sommets potentiels : m ± perp(v)
+          const ax = mx - vy, ay = my + vx;
+          const bx = mx + vy, by = my - vx;
+
+          if(isInt(ax) && isInt(ay) && isInt(bx) && isInt(by)){
+            const ar = Math.round(ax), ac = Math.round(ay);
+            const br = Math.round(bx), bc = Math.round(by);
+            if(inBounds(ar) && inBounds(ac) && inBounds(br) && inBounds(bc)){
+              if(has(ar,ac) && has(br,bc)){
+                return true; // carré trouvé (toutes orientations)
+              }
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function wouldCompleteAnySquare(r,c){
+      const tmp=new Set(placed); tmp.add(rcKey(r,c));
+      return existsCompletedSquare(tmp);
+    }
+
+    // Contrainte ON/OFF
+    function syncConstraintButtons(){
+      const label='Contrainte : ' + (constraintOn ? 'ON' : 'OFF');
+      btnToggle.textContent=label; btnToggle.classList.toggle('primary',constraintOn); btnToggle.setAttribute('aria-pressed',String(constraintOn));
+      fsConstraint.textContent=label; fsConstraint.classList.toggle('primary',constraintOn); fsConstraint.setAttribute('aria-pressed',String(constraintOn));
+    }
+    btnToggle.onclick=()=>{constraintOn=!constraintOn; syncConstraintButtons(); update();};
+    fsConstraint.onclick=()=>{constraintOn=!constraintOn; syncConstraintButtons(); update();};
+
+    // Undo/redo/reset/aide
+    btnUndo.onclick=()=>{const s=history.pop(); if(!s)return; if(s.type==='add') removeToken(s.r,s.c,false); else addToken(s.r,s.c,false); redoStack.push(s); update();};
+    btnRedo.onclick=()=>{const s=redoStack.pop(); if(!s)return; if(s.type==='add') addToken(s.r,s.c,true); else removeToken(s.r,s.c,true); update();};
+    btnReset.onclick=()=>{placed.clear(); tokensG.innerHTML=''; history.length=0; redoStack.length=0; localStorage.removeItem(BEST_KEY); best=0; bestEl.textContent='Meilleur : 0'; setMessage('Plateau réinitialisé.'); update();};
+    btnHelp.onclick=()=>document.getElementById('modal').showModal();
+
+    // Plein écran et panneaux latéraux
+    const app=document.getElementById('app');
+    btnFS.onclick=()=>{ if(!document.fullscreenElement){ app.requestFullscreen(); } else { document.exitFullscreen(); } };
+
+    // FS mirrored controls
+    document.getElementById('fsUndo').onclick=()=>btnUndo.click();
+    document.getElementById('fsRedo').onclick=()=>btnRedo.click();
+    document.getElementById('fsReset').onclick=()=>btnReset.click();
+    document.getElementById('fsExportPdf').onclick=()=>document.getElementById('exportPdf').click();
+    document.getElementById('fsSave').onclick=()=>btnSave.click();
+    document.getElementById('fsOpen').onclick=()=>btnOpen.click();
+    document.getElementById('fsHelp').onclick=()=>btnHelp.click();
+    document.getElementById('fsExit').onclick=()=>{ if(document.fullscreenElement) document.exitFullscreen(); };
+
+    document.addEventListener('fullscreenchange',()=>{
+      const entering=Boolean(document.fullscreenElement);
+      document.getElementById('fullscreen').textContent = entering? 'Quitter plein écran' : 'Plein écran';
+      const toolbar = document.querySelector('.toolbar');
+      if(entering){
+        // déplacer badges dans le panneau FS
+        fsBadgesSlot.appendChild(toolbarLeft);
+        fsSelectCount.value = selectCount.value;
+        applyControlsHidden(false);
+      }else{
+        // remettre les badges en haut (début de la toolbar)
+        if (toolbar) toolbar.prepend(toolbarLeft);
+        selectCount.value = fsSelectCount.value;
+        applyControlsHidden(false);
+      }
+    });
+
+    function toToggle(){ return [fsBadgesSlot, fsConstraint, fsSelectCount, fsExportPdf]; }
+    function applyControlsHidden(hidden){
+      const root = document.fullscreenElement || document.documentElement;
+      if(hidden){ root.classList.add('controls-hidden'); fsHideControls.classList.add('active'); }
+      else{ root.classList.remove('controls-hidden'); fsHideControls.classList.remove('active'); }
+      for(const el of toToggle()){ if(!el) continue; el.style.display = hidden ? 'none' : ''; }
+    }
+    fsHideControls.addEventListener('click',()=>{
+      const root = document.fullscreenElement || document.documentElement;
+      const hidden = !root.classList.contains('controls-hidden');
+      applyControlsHidden(hidden);
+    });
+
+    // Export PDF (grilles vierges) — identique à v2 (tronqué ici pour concision)
+    async function ensurePdfLib(){ if(window.PDFLib) return true; return new Promise(res=>{ const s=document.createElement('script'); s.src='https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'; s.onload=()=>res(true); s.onerror=()=>res(false); document.head.appendChild(s); }); }
+    function mm(n){ return n * 72 / 25.4; }
+    function layoutFor(n){ const gap=8; switch(+n){ case 1:return{cols:1,sizeMm:180,gapMm:gap}; case 2:return{cols:1,sizeMm:130,gapMm:gap}; case 4:return{cols:2,sizeMm:100,gapMm:gap}; case 6:return{cols:2,sizeMm:90,gapMm:gap}; case 8:return{cols:2,sizeMm:80,gapMm:gap}; case 10:return{cols:2,sizeMm:70,gapMm:gap}; default:return{cols:2,sizeMm:90,gapMm:gap}; } }
+    function drawGrid(page,x0,y0,size){ const {rgb}=window.PDFLib; const stroke=rgb(0,0,0); const step=size/4; page.drawRectangle({x:x0,y:y0,width:size,height:size,borderColor:stroke,borderWidth:1}); for(let i=1;i<4;i++){ page.drawLine({start:{x:x0+i*step,y:y0},end:{x:x0+i*step,y:y0+size},color:stroke,thickness:1}); page.drawLine({start:{x:x0,y:y0+i*step},end:{x:x0+size,y:y0+i*step},color:stroke,thickness:1}); } const r=Math.max(1,size*0.012); for(let i=0;i<5;i++){ for(let j=0;j<5;j++){ const cx=x0+j*step, cy=y0+i*step; page.drawCircle({x:cx,y:cy,size:r,color:rgb(1,1,1),borderColor:stroke,borderWidth:1}); } } }
+    async function downloadPdf(n){ n=Number(n)||6; const ok=await ensurePdfLib(); if(!ok){ setError('Impossible de charger la bibliothèque PDF.'); return; } const { PDFDocument }=window.PDFLib; const pdf=await PDFDocument.create(); const page=pdf.addPage([mm(210),mm(297)]); const {cols,sizeMm,gapMm}=layoutFor(n); const size=mm(sizeMm), gap=mm(gapMm); const width=page.getWidth(), height=page.getHeight(); const rows=Math.ceil(n/cols); const totalW=cols*size+(cols-1)*gap; const totalH=rows*size+(rows-1)*gap; const startX=(width-totalW)/2; const startYTop=(height+totalH)/2 - size; let drawn=0; for(let r=0;r<rows;r++){ for(let c=0;c<cols;c++){ if(drawn>=n) break; const x0=startX+c*(size+gap); const y0=startYTop - r*(size+gap); drawGrid(page,x0,y0,size); drawn++; } } const bytes=await pdf.save(); const blob=new Blob([bytes],{type:'application/pdf'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='grilles_4x4carres_'+n+'_A4.pdf'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },0); setMessage('PDF téléchargé.'); }
+    document.getElementById('exportPdf').onclick=()=>downloadPdf(selectCount.value);
+    document.getElementById('fsExportPdf').onclick=()=>downloadPdf(fsSelectCount.value);
+
+    // Save/Open JSON
+    function serialize(){ return { lines:LINES, pitch:PITCH, margin:MARGIN, tokens:[...placed].map(k=>k.split(',').map(Number)), constraintOn }; }
+    function downloadJSON(filename, data){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(url); a.remove();},0); }
+    function saveGrid(){ const data=serialize(); const ts=new Date().toISOString().replace(/[:.]/g,'-'); downloadJSON('grille_nosquare_'+ts+'.json', data); setMessage('Grille enregistrée (JSON).'); }
+    btnSave.onclick=saveGrid;
+
+    function loadGridObject(obj){ if(!obj || !Array.isArray(obj.tokens)){ setError('Fichier invalide.'); return; } placed.clear(); tokensG.innerHTML=''; history.length=0; redoStack.length=0; for(const pair of obj.tokens){ const r=pair[0], c=pair[1]; if(Number.isInteger(r)&&Number.isInteger(c)&&r>=0&&r<LINES&&c>=0&&c<LINES){ addToken(r,c,false); } } if(typeof obj.constraintOn==='boolean'){ constraintOn=obj.constraintOn; syncConstraintButtons(); } update(); setMessage('Grille chargée.'); }
+    function openGridFromFile(file){ const reader=new FileReader(); reader.onload=()=>{ try{ const obj=JSON.parse(reader.result); loadGridObject(obj); } catch(e){ setError('Impossible de lire le JSON.'); } }; reader.readAsText(file); }
+    btnOpen.onclick=()=>inputOpen.click(); inputOpen.onchange=(e)=>{ const file=e.target.files && e.target.files[0]; if(file) openGridFromFile(file); e.target.value=''; };
+
+    // Drag & drop
+    ;['dragenter','dragover'].forEach(ev=>container.addEventListener(ev,e=>{e.preventDefault();container.classList.add('drop-over');}));
+    ;['dragleave','drop'].forEach(ev=>container.addEventListener(ev,e=>{e.preventDefault();container.classList.remove('drop-over');}));
+    container.addEventListener('drop', e=>{ e.preventDefault(); const file=e.dataTransfer.files && e.dataTransfer.files[0]; if(file && e.dataTransfer.files[0].type==='application/json'){ openGridFromFile(file); } });
+
+    // init
+    syncConstraintButtons();
+    update();
+  })();
+  </script>
+</body>
+</html>
